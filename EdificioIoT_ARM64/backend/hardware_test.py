@@ -103,24 +103,25 @@ def aplicar_logica_automatica(lecturas, estado):
     actuators.set_leds_estado(estado)
 
 
-def manejar_botones():
-    presionados = buttons.leer_botones_presionados()
-    for boton in presionados:
-        logger.info("Botón presionado: %s", boton)
-        if boton == "boton_puerta":
-            if actuators.estado_actuadores["puerta"] == "CERRADA":
-                actuators.abrir_puerta()
-            else:
-                actuators.cerrar_puerta()
-        elif boton == "boton_modo_luz":
-            actual = actuators.estado_actuadores["modo_iluminacion"]
-            nuevo = "MANUAL" if actual == "AUTOMATICO" else "AUTOMATICO"
-            actuators.set_modo_iluminacion(nuevo)
-            logger.info("Modo de iluminación -> %s", nuevo)
-        elif boton == "boton_silenciar":
-            actuators.silenciar_alarma()
-        elif boton == "boton_reset_alerta":
-            state_manager.resetear_alerta()
+def manejar_boton(boton):
+    """
+    Callback llamado por interrupción (ver buttons.py) en el instante mismo
+    en que se presiona el botón, sin esperar al loop de sensores.
+    """
+    if boton == "boton_puerta":
+        if actuators.estado_actuadores["puerta"] == "CERRADA":
+            actuators.abrir_puerta()
+        else:
+            actuators.cerrar_puerta()
+    elif boton == "boton_modo_luz":
+        actual = actuators.estado_actuadores["modo_iluminacion"]
+        nuevo = "MANUAL" if actual == "AUTOMATICO" else "AUTOMATICO"
+        actuators.set_modo_iluminacion(nuevo)
+        logger.info("Modo de iluminación -> %s", nuevo)
+    elif boton == "boton_silenciar":
+        actuators.silenciar_alarma()
+    elif boton == "boton_reset_alerta":
+        state_manager.resetear_alerta()
 
 
 def main():
@@ -131,7 +132,7 @@ def main():
 
         arduino_bridge.conectar()
 
-    buttons.conectar()
+    buttons.conectar(manejar_boton)
     lcd.conectar()
 
     logger.info("Iniciando loop de prueba de hardware (Ctrl+C para salir)")
@@ -152,7 +153,6 @@ def main():
             )
 
             aplicar_logica_automatica(lecturas, estado)
-            manejar_botones()
             actualizar_lcd(
                 lecturas, actuators.estado_actuadores["puerta"], estado
             )

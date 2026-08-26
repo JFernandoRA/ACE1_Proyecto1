@@ -1,6 +1,12 @@
 """
 buttons.py
-Lectura de los 4 botones físicos del panel de control.
+Lectura de los 4 botones físicos del panel de control, por INTERRUPCIÓN
+(no por sondeo). Esto es importante: el loop principal de hardware_test.py
+lee sensores cada varios segundos, y un botón presionado con la mano dura
+una fracción de segundo — si solo revisáramos el estado del pin dentro de
+ese loop lento, casi nunca lo alcanzaríamos a detectar. Por eso usamos
+GPIO.add_event_detect, que reacciona al instante sin importar en qué esté
+el loop principal.
 
 Conexión de CADA botón (idéntica para los 4):
     Un extremo del botón -> GPIO correspondiente (ver config.PINS)
@@ -8,7 +14,8 @@ Conexión de CADA botón (idéntica para los 4):
 
 Usamos la resistencia pull-up interna de la Raspberry Pi (PUD_UP), así que
 NO necesitas resistencias externas. En reposo el pin lee HIGH (1); al
-presionar el botón se conecta a GND y el pin lee LOW (0).
+presionar el botón se conecta a GND y el pin lee LOW (0), lo cual es el
+flanco de bajada (FALLING) que detectamos.
 
 Botones:
     boton_puerta        -> abrir/cerrar puerta manualmente
@@ -18,7 +25,6 @@ Botones:
 """
 
 import logging
-import time
 
 import config
 
@@ -31,14 +37,15 @@ _BOTONES = [
     "boton_reset_alerta",
 ]
 
-# Para hacer debounce por software: guardamos el último estado leído
-# y el momento del último cambio válido de cada botón.
-_ultimo_estado = {b: 1 for b in _BOTONES}
-_ultimo_cambio = {b: 0.0 for b in _BOTONES}
-_DEBOUNCE_SEG = 0.2
+_BOUNCETIME_MS = 250  # tiempo mínimo entre pulsaciones válidas (anti-rebote)
 
 
-def conectar():
+def conectar(callback):
+    """
+    Registra los 4 botones para que, al presionarse, se llame
+    callback(nombre_del_boton) automáticamente, sin necesidad de sondearlos
+    desde el loop principal.
+    """
     if config.USE_SIMULATION:
         logger.info("Botones en modo simulación (no hay hardware que leer)")
         return
@@ -47,34 +54,28 @@ def conectar():
 
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
-    for nombre in _BOTONES:
-        GPIO.setup(config.PINS[nombre], GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-
-def leer_botones_presionados() -> list:
-    """
-    Revisa los 4 botones y devuelve una lista con los nombres de los que
-    se acaban de presionar en este instante (con debounce aplicado).
-    Debe llamarse periódicamente dentro del loop principal.
-    """
-    if config.USE_SIMULATION:
-        return []
-
-    import RPi.GPIO as GPIO
-
-    presionados = []
-    ahora = time.time()
 
     for nombre in _BOTONES:
         pin = config.PINS[nombre]
-        estado = GPIO.input(pin)  # 1 = suelto, 0 = presionado (pull-up)
+        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-        if estado == 0 and _ultimo_estado[nombre] == 1:
-            # Flanco de bajada: posible pulsación
-            if ahora - _ultimo_cambio[nombre] > _DEBOUNCE_SEG:
-                presionados.append(nombre)
-                _ultimo_cambio[nombre] = ahora
+        # Usamos una función que captura "nombre" correctamente (evita el
+        # clásico bug de que todos los callbacks terminen usando el último
+        # valor de la variable del for).
+        def _handler(channel, nombre=nombre):
+            logger.info("Botón presionado: %s (GPIO%s)", nombre, channel)
+            callback(nombre)
 
-        _ultimo_estado[nombre] = estado
+        try:
+            GPIO.add_event_detect(
+                pin, GPIO.FALLING, callback=_handler, bouncetime=_BOUNCETIME_MS
+            )
+        except RuntimeError as e:
+            logger.error(
+                "No se pudo registrar el evento para %s (GPIO%s): %s",
+                nombre,
+                pin,
+                e,
+            )
 
-    return presionados
+    logger.info("Botones registrados por interrupción: %s", _BOTONES)

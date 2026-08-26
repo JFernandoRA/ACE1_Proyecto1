@@ -26,9 +26,9 @@ if not config.USE_SIMULATION:
 
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(config.PINS["servo_puerta"], GPIO.OUT)
-    # initial=GPIO.HIGH porque este buzzer es activo-bajo (se apaga en HIGH);
-    # sin esto, el pin podría arrancar en LOW y sonar solo al iniciar el programa.
-    GPIO.setup(config.PINS["buzzer"], GPIO.OUT, initial=GPIO.HIGH)
+    # Con el transistor añadido para controlar el buzzer, la lógica ya es
+    # normal (HIGH = suena), así que arrancamos en LOW = silencio.
+    GPIO.setup(config.PINS["buzzer"], GPIO.OUT, initial=GPIO.LOW)
     GPIO.setup(config.PINS["led_rojo"], GPIO.OUT)
     GPIO.setup(config.PINS["led_puerta"], GPIO.OUT)
     GPIO.setup(config.PINS["led_estado_verde"], GPIO.OUT)
@@ -52,15 +52,15 @@ def _set_pin(pin_name, value: bool):
 
 def _set_buzzer(activo: bool):
     """
-    El módulo de buzzer activo (tipo MH-FMD, marcado '低电平触发' = disparo por
-    nivel bajo) enciende con el pin I/O en LOW y se apaga con HIGH. Es al
-    revés de un LED normal, así que invertimos aquí para que el resto del
-    código solo piense en "activo / no activo", sin preocuparse por la
-    polaridad del módulo.
+    Con el circuito de transistor (GPIO27 -> resistencia 100 ohm -> base;
+    emisor -> GND; colector -> GND del módulo buzzer; I/O del módulo fijo a
+    GND), el GPIO ya no habla directo con la lógica activa-baja de la
+    placa: ahora solo controla si existe un camino a tierra para el módulo.
+    Por eso aquí la lógica es normal: HIGH = suena, LOW = silencio.
     """
     if config.USE_SIMULATION:
         return
-    GPIO.output(config.PINS["buzzer"], GPIO.LOW if activo else GPIO.HIGH)
+    GPIO.output(config.PINS["buzzer"], GPIO.HIGH if activo else GPIO.LOW)
 
 
 # ---------------------------------------------------------------------------
