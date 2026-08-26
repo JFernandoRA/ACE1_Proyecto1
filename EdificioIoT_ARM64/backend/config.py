@@ -70,24 +70,42 @@ ARM64_BIN = os.path.join(ARM64_DIR, "procesador")
 ARM64_DATOS_TXT = os.path.join(ARM64_DIR, "datos.txt")
 ARM64_RESULTADO_TXT = os.path.join(ARM64_DIR, "resultado.txt")
 
-#Pines GPIO
+# ---------------------------------------------------------------------------
+# Pines GPIO (numeración BCM) - Raspberry Pi 3
+#
+# NOTA IMPORTANTE: la Raspberry Pi no tiene entradas analógicas, por lo que
+# el MQ-2 (gas/humo) y el LDR (luz) NO se conectan a la Pi. Se conectan a un
+# Arduino Uno, que lee sus valores analógicos y se los envía a la Pi por
+# cable USB (puerto serie). Ver arduino_bridge.py y arduino/mq2_ldr_reader.ino
+# ---------------------------------------------------------------------------
 PINS = {
-    "dht": 4,
-    "mq_gas_do": 17,        # salida digital del sensor de gas 
-    "hcsr04_trigger": 23,
-    "hcsr04_echo": 24,
-    "ldr_channel": 0,        # canal en ADC externo, si aplica
-    "servo_puerta": 18,
-    "buzzer": 27,
-    "led_rojo": 22,
-    "led_puerta": 5,
-    "led_estado_verde": 6,
-    "led_estado_amarillo": 13,
-    "led_estado_rojo": 19,
-    "leds_iluminacion": [12, 16, 20],  # mínimo 3 zonas
-    "ventilador": 25,
-    "boton_puerta": 21,
-    "boton_modo_luz": 26,
-    "boton_silenciar": 20,
-    "boton_reset_alerta": 7,
+    "dht": 4,                 # DHT11/DHT22 - dato (pin físico 7)
+    "hcsr04_trigger": 23,      # HC-SR04 - trigger (pin físico 16)
+    "hcsr04_echo": 24,         # HC-SR04 - echo, vía divisor de voltaje (pin físico 18)
+    "servo_puerta": 18,        # Servo SG90 - señal PWM (pin físico 12)
+    "buzzer": 27,              # Buzzer activo (pin físico 13)
+    "led_rojo": 22,            # LED rojo de emergencia por gas (pin físico 15)
+    "led_puerta": 5,           # LED indicador de puerta (pin físico 29)
+    "led_estado_verde": 6,     # LED estado NORMAL (pin físico 31)
+    "led_estado_amarillo": 13, # LED estado ADVERTENCIA (pin físico 33)
+    "led_estado_rojo": 19,     # LED estado EMERGENCIA (pin físico 35)
+    "leds_iluminacion": [12, 16, 20],  # 3 zonas (pines físicos 32, 36, 38)
+    "ventilador": 25,          # Control de ventilador vía relé/transistor (pin físico 22)
+    "boton_puerta": 21,        # Botón físico: abrir/cerrar puerta (pin físico 40)
+    "boton_modo_luz": 26,      # Botón físico: alternar modo AUTOMATICO/MANUAL (pin físico 37)
+    "boton_silenciar": 7,      # Botón físico: silenciar buzzer (pin físico 26)
+    "boton_reset_alerta": 8,   # Botón físico: resetear alerta (pin físico 24)
+    # LCD 16x2 con backpack I2C: no usa pines PINS, usa el bus I2C
+    # (SDA = GPIO2 / pin físico 3, SCL = GPIO3 / pin físico 5)
 }
+
+# Dirección I2C del backpack del LCD (la más común es 0x27, algunos son 0x3F)
+LCD_I2C_ADDRESS = int(os.getenv("LCD_I2C_ADDRESS", "0x27"), 16)
+LCD_COLS = 16
+LCD_ROWS = 2
+
+# ---------------------------------------------------------------------------
+# Puente serie con el Arduino Uno (lee MQ-2 y LDR)
+# ---------------------------------------------------------------------------
+ARDUINO_SERIAL_PORT = os.getenv("ARDUINO_SERIAL_PORT", "/dev/ttyACM0")
+ARDUINO_BAUDRATE = int(os.getenv("ARDUINO_BAUDRATE", "9600"))

@@ -1,3 +1,11 @@
 paho-mqtt==1.6.1
 pymongo==4.7.2
 python-dotenv==1.0.1
+
+# --- Solo necesarias en la Raspberry Pi (USE_SIMULATION=False) ---
+RPi.GPIO==0.7.1
+adafruit-circuitpython-dht==4.0.5
+adafruit-blinka==8.30.0
+pyserial==3.5
+RPLCD==1.3.1
+smbus2==0.4.3

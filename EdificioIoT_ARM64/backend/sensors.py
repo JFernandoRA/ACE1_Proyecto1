@@ -5,9 +5,12 @@ Lectura de sensores del edificio inteligente.
 Cuando config.USE_SIMULATION = True, genera valores aleatorios realistas
 para poder desarrollar y probar todo el sistema sin hardware conectado.
 
-Cuando config.USE_SIMULATION = False, usa las librerías reales de GPIO.
-Aquí se dejan marcados con TODO los puntos donde cada quien debe conectar
-su sensor real, según el hardware que usen (DHT11/22, MQ-2/135, HC-SR04, LDR).
+Cuando config.USE_SIMULATION = False, usa hardware real:
+  - Temperatura/Humedad (DHT11/DHT22): directo en un GPIO de la Raspberry Pi.
+  - Distancia (HC-SR04): directo en dos GPIO de la Raspberry Pi.
+  - Gas (MQ-2) y Luz (LDR): NO se leen desde la Pi (no tiene entradas
+    analógicas). Se leen desde arduino_bridge.py, que recibe los valores
+    de un Arduino Uno conectado por USB.
 """
 
 import random
@@ -20,13 +23,19 @@ logger = logging.getLogger("sensors")
 if not config.USE_SIMULATION:
     # Importaciones reales, solo se cargan si NO estamos en modo simulación
     # para que el código corra en tu laptop sin necesitar estas librerías.
-    import Adafruit_DHT           # pip install Adafruit_DHT (o adafruit-circuitpython-dht)
     import RPi.GPIO as GPIO
+    import adafruit_dht
+    import board
+    import arduino_bridge
 
     GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
     GPIO.setup(config.PINS["hcsr04_trigger"], GPIO.OUT)
     GPIO.setup(config.PINS["hcsr04_echo"], GPIO.IN)
-    # TODO: setup de MQ-2/MQ-135 y LDR según si usan salida digital o un ADC (MCP3008, ADS1115, etc.)
+
+    # adafruit_dht necesita el pin como objeto "board.Dxx", no como número BCM.
+    # board.D4 == BCM 4 (ajusta si cambias config.PINS["dht"]).
+    _dht_device = adafruit_dht.DHT11(board.D4, use_pulseio=False)
 
 
 # ---------------------------------------------------------------------------
@@ -38,18 +47,21 @@ def leer_temperatura_humedad():
         humedad = round(random.uniform(25.0, 75.0), 1)
         return temperatura, humedad
 
-    # TODO: reemplazar Adafruit_DHT.DHT22 por DHT11 si ese es tu sensor
-    humedad, temperatura = Adafruit_DHT.read_retry(
-        Adafruit_DHT.DHT22, config.PINS["dht"]
-    )
-    if humedad is None or temperatura is None:
-        logger.warning("No se pudo leer el sensor DHT")
+    try:
+        temperatura = _dht_device.temperature
+        humedad = _dht_device.humidity
+        if temperatura is None or humedad is None:
+            logger.warning("Lectura del DHT vino vacía, se reintentará luego")
+            return None, None
+        return round(temperatura, 1), round(humedad, 1)
+    except RuntimeError as e:
+        # El DHT falla una lectura de vez en cuando, es normal, no truena el programa.
+        logger.debug("Lectura fallida del DHT (normal ocasionalmente): %s", e)
         return None, None
-    return round(temperatura, 1), round(humedad, 1)
 
 
 # ---------------------------------------------------------------------------
-# Gas / Humo (MQ-2 / MQ-135)
+# Gas / Humo (MQ-2) -- vía Arduino
 # ---------------------------------------------------------------------------
 def leer_gas():
     if config.USE_SIMULATION:
@@ -58,8 +70,12 @@ def leer_gas():
             return random.randint(400, 700)  # simula evento de emergencia
         return random.randint(50, 250)
 
-    # TODO: leer valor analógico real (vía ADC) o digital (GPIO.input) del MQ-2/MQ-135
-    raise NotImplementedError("Conectar lectura real del sensor de gas aquí")
+    if not arduino_bridge.datos_frescos():
+        logger.warning(
+            "No hay datos recientes del Arduino (gas). "
+            "Revisa el cable USB / que el sketch esté corriendo."
+        )
+    return arduino_bridge.get_gas()
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +95,9 @@ def leer_distancia():
     time.sleep(0.00001)
     GPIO.output(trigger, False)
 
+    start = time.time()
+    stop = time.time()
+
     timeout = time.time() + 0.04
     while GPIO.input(echo) == 0 and time.time() < timeout:
         start = time.time()
@@ -86,24 +105,31 @@ def leer_distancia():
     while GPIO.input(echo) == 1 and time.time() < timeout:
         stop = time.time()
 
-    try:
-        elapsed = stop - start
-        distancia_cm = (elapsed * 34300) / 2
-        return round(distancia_cm, 1)
-    except NameError:
+    elapsed = stop - start
+    if elapsed <= 0:
         logger.warning("Timeout leyendo HC-SR04")
         return None
 
+    distancia_cm = (elapsed * 34300) / 2
+    if distancia_cm > 400 or distancia_cm < 0:
+        # Fuera del rango físico real del HC-SR04, descartar lectura
+        return None
+    return round(distancia_cm, 1)
+
 
 # ---------------------------------------------------------------------------
-# Nivel de luz (LDR)
+# Nivel de luz (LDR) -- vía Arduino
 # ---------------------------------------------------------------------------
 def leer_luz():
     if config.USE_SIMULATION:
         return random.randint(0, 1023)
 
-    # TODO: leer valor analógico real del LDR (vía ADC, ej. MCP3008)
-    raise NotImplementedError("Conectar lectura real del sensor LDR aquí")
+    if not arduino_bridge.datos_frescos():
+        logger.warning(
+            "No hay datos recientes del Arduino (luz). "
+            "Revisa el cable USB / que el sketch esté corriendo."
+        )
+    return arduino_bridge.get_luz()
 
 
 def leer_todos_los_sensores() -> dict:
