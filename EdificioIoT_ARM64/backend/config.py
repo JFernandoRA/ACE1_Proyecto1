@@ -104,6 +104,12 @@ LCD_I2C_ADDRESS = int(os.getenv("LCD_I2C_ADDRESS", "0x27"), 16)
 LCD_COLS = 16
 LCD_ROWS = 2
 
+# El módulo de relé de 1 canal más común (placa azul, relé "Songle") es
+# activo-bajo: se energiza con IN en LOW, igual que tu buzzer. Si al correr
+# test_rele_rapido.py el relé hace "clic" en la fase de HIGH en vez de LOW,
+# cambia esto a False.
+RELE_VENTILADOR_ACTIVE_LOW = os.getenv("RELE_VENTILADOR_ACTIVE_LOW", "True").lower() == "true"
+
 # ---------------------------------------------------------------------------
 # Puente serie con el Arduino Uno (lee MQ-2 y LDR)
 # ---------------------------------------------------------------------------
