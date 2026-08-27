@@ -80,7 +80,7 @@ def cerrar_puerta():
     estado_actuadores["puerta"] = "CERRADA"
     _set_pin("led_puerta", False)
     if not config.USE_SIMULATION:
-        servo.ChangeDutyCycle(10)  # ~0 grados
+        servo.ChangeDutyCycle(7.5)  # ~0 grados
         time.sleep(0.5)
         servo.ChangeDutyCycle(0)
     logger.info("Puerta CERRADA")
