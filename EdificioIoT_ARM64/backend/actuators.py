@@ -70,7 +70,7 @@ def abrir_puerta():
     estado_actuadores["puerta"] = "ABIERTA"
     _set_pin("led_puerta", True)
     if not config.USE_SIMULATION:
-        servo.ChangeDutyCycle(7.5)  # ~90 grados, ajustar según el servo
+        servo.ChangeDutyCycle(10)  # ~90 grados, ajustar según el servo
         time.sleep(0.5)
         servo.ChangeDutyCycle(0)
     logger.info("Puerta ABIERTA")
