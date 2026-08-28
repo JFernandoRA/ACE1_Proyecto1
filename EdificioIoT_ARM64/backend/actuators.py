@@ -34,9 +34,8 @@ if not config.USE_SIMULATION:
     GPIO.setup(config.PINS["led_estado_verde"], GPIO.OUT)
     GPIO.setup(config.PINS["led_estado_amarillo"], GPIO.OUT)
     GPIO.setup(config.PINS["led_estado_rojo"], GPIO.OUT)
-    # Estado inicial seguro: "apagado", sea cual sea la polaridad del relé.
-    _rele_pin_apagado = GPIO.HIGH if config.RELE_VENTILADOR_ACTIVE_LOW else GPIO.LOW
-    GPIO.setup(config.PINS["ventilador"], GPIO.OUT, initial=_rele_pin_apagado)
+    # Estado inicial seguro: apagado (LOW), confirmado con hardware real.
+    GPIO.setup(config.PINS["ventilador"], GPIO.OUT, initial=GPIO.LOW)
     for pin in config.PINS["leds_iluminacion"]:
         GPIO.setup(pin, GPIO.OUT)
 
@@ -107,19 +106,16 @@ def set_modo_iluminacion(modo: str):
 # ---------------------------------------------------------------------------
 def set_ventilador(encender: bool):
     """
-    Controla el relé del ventilador. El módulo JQC3-05VDC-C (como el buzzer)
-    normalmente es activo-bajo: IN en LOW energiza la bobina y cierra el
-    contacto COM-NO. Si tu módulo resulta ser al revés, cambia
-    RELE_VENTILADOR_ACTIVE_LOW=False en el .env (ver test_rele_rapido.py
-    para confirmar cuál es tu caso).
+    Controla el relé del ventilador.
+    Confirmado con hardware real: HIGH = relé activado (ventilador encendido),
+    LOW = relé apagado. Fijo directo en código, sin depender de ningún flag
+    de .env, para no volver a toparnos con variables de entorno que no se
+    estaban aplicando.
     """
     estado_actuadores["ventilador"] = encender
     if config.USE_SIMULATION:
         return
-    if config.RELE_VENTILADOR_ACTIVE_LOW:
-        GPIO.output(config.PINS["ventilador"], GPIO.LOW if encender else GPIO.HIGH)
-    else:
-        GPIO.output(config.PINS["ventilador"], GPIO.HIGH if encender else GPIO.LOW)
+    GPIO.output(config.PINS["ventilador"], GPIO.HIGH if encender else GPIO.LOW)
 
 
 # ---------------------------------------------------------------------------
