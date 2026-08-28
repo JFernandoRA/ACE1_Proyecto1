@@ -1,21 +1,23 @@
 """
 buttons.py
-Lectura de los 4 botones físicos del panel de control, por INTERRUPCIÓN
-(no por sondeo). Esto es importante: el loop principal de hardware_test.py
-lee sensores cada varios segundos, y un botón presionado con la mano dura
-una fracción de segundo — si solo revisáramos el estado del pin dentro de
-ese loop lento, casi nunca lo alcanzaríamos a detectar. Por eso usamos
-GPIO.add_event_detect, que reacciona al instante sin importar en qué esté
-el loop principal.
+Lectura de los 4 botones físicos del panel de control, por INTERRUPCIÓN.
+
+NOTA TÉCNICA: usamos la librería 'gpiozero' en vez de 'RPi.GPIO' para esto
+específicamente. En Raspberry Pi OS reciente (Bookworm), RPi.GPIO no puede
+hacer detección de eventos de forma confiable (falla con "Failed to add
+edge detection" incluso con permisos de root) — es una incompatibilidad
+conocida con el kernel nuevo. gpiozero sí funciona bien porque usa un
+backend moderno (lgpio) por debajo. El resto del proyecto (LEDs, servo,
+sensores) puede seguir usando RPi.GPIO sin problema; ambas librerías
+conviven bien siempre que controlen pines distintos.
 
 Conexión de CADA botón (idéntica para los 4):
     Un extremo del botón -> GPIO correspondiente (ver config.PINS)
     Otro extremo del botón -> GND
 
-Usamos la resistencia pull-up interna de la Raspberry Pi (PUD_UP), así que
-NO necesitas resistencias externas. En reposo el pin lee HIGH (1); al
-presionar el botón se conecta a GND y el pin lee LOW (0), lo cual es el
-flanco de bajada (FALLING) que detectamos.
+gpiozero usa pull-up interno por default, así que NO necesitas resistencias
+externas. En reposo el pin lee HIGH; al presionar el botón se conecta a
+GND, y gpiozero dispara automáticamente el evento "presionado".
 
 Botones:
     boton_puerta        -> abrir/cerrar puerta manualmente
@@ -37,7 +39,11 @@ _BOTONES = [
     "boton_reset_alerta",
 ]
 
-_BOUNCETIME_MS = 250  # tiempo mínimo entre pulsaciones válidas (anti-rebote)
+_BOUNCE_SEG = 0.25  # tiempo mínimo entre pulsaciones válidas (anti-rebote)
+
+# Guardamos los objetos Button aquí para que no los recoja el garbage
+# collector (si se pierden, dejan de detectar pulsaciones sin avisar).
+_botones_gpiozero = {}
 
 
 def conectar(callback):
@@ -50,32 +56,22 @@ def conectar(callback):
         logger.info("Botones en modo simulación (no hay hardware que leer)")
         return
 
-    import RPi.GPIO as GPIO
-
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setwarnings(False)
+    from gpiozero import Button
 
     for nombre in _BOTONES:
         pin = config.PINS[nombre]
-        GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-        # Usamos una función que captura "nombre" correctamente (evita el
-        # clásico bug de que todos los callbacks terminen usando el último
-        # valor de la variable del for).
-        def _handler(channel, nombre=nombre):
-            logger.info("Botón presionado: %s (GPIO%s)", nombre, channel)
-            callback(nombre)
-
         try:
-            GPIO.add_event_detect(
-                pin, GPIO.FALLING, callback=_handler, bouncetime=_BOUNCETIME_MS
-            )
-        except RuntimeError as e:
+            boton = Button(pin, pull_up=True, bounce_time=_BOUNCE_SEG)
+
+            def _handler(nombre=nombre):
+                logger.info("Botón presionado: %s", nombre)
+                callback(nombre)
+
+            boton.when_pressed = _handler
+            _botones_gpiozero[nombre] = boton
+        except Exception as e:
             logger.error(
-                "No se pudo registrar el evento para %s (GPIO%s): %s",
-                nombre,
-                pin,
-                e,
+                "No se pudo registrar el botón %s (GPIO%s): %s", nombre, pin, e
             )
 
-    logger.info("Botones registrados por interrupción: %s", _BOTONES)
+    logger.info("Botones registrados por interrupción (gpiozero): %s", _BOTONES)

@@ -4,6 +4,7 @@ python-dotenv==1.0.1
 
 # --- Solo necesarias en la Raspberry Pi (USE_SIMULATION=False) ---
 RPi.GPIO==0.7.1
+gpiozero==2.0.1
 adafruit-circuitpython-dht==4.0.5
 adafruit-blinka==8.30.0
 pyserial==3.5
