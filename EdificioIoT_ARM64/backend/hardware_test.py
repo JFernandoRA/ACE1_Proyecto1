@@ -128,6 +128,17 @@ def manejar_boton(boton):
         state_manager.resetear_alerta()
 
 
+def apagar_todo():
+    """
+    Se llama siempre al detener el programa (Ctrl+C, error, etc.) para dejar
+    el relé del ventilador y los LEDs de estado apagados, en vez de dejarlos
+    prendidos hasta que se vuelva a correr el script.
+    """
+    logger.info("Apagando ventilador y LEDs de estado...")
+    actuators.set_ventilador(False)
+    actuators.set_leds_estado("APAGADO")  # ninguno de los 3 coincide -> los 3 quedan apagados
+
+
 def main():
     logger.info("Modo simulación: %s", config.USE_SIMULATION)
 
@@ -166,6 +177,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("Deteniendo...")
     finally:
+        apagar_todo()
         if not config.USE_SIMULATION:
             import arduino_bridge
 
