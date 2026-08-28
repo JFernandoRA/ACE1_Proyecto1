@@ -44,6 +44,11 @@ logger = logging.getLogger("hardware_test")
 _PANTALLA_ACTUAL = 0
 _NUM_PANTALLAS = 6
 
+# Guardamos aquí la última lectura de sensores, para que el botón de reset
+# (que llega por interrupción, fuera del loop principal) pueda consultar el
+# valor de gas más reciente en vez de trabajar a ciegas.
+_ultimas_lecturas = {}
+
 
 def actualizar_lcd(lecturas, estado_puerta, estado_global):
     global _PANTALLA_ACTUAL
@@ -125,7 +130,7 @@ def manejar_boton(boton):
     elif boton == "boton_silenciar":
         actuators.silenciar_alarma()
     elif boton == "boton_reset_alerta":
-        state_manager.resetear_alerta()
+        state_manager.resetear_alerta(_ultimas_lecturas)
 
 
 def apagar_todo():
@@ -155,6 +160,8 @@ def main():
     try:
         while True:
             lecturas = sensors.leer_todos_los_sensores()
+            _ultimas_lecturas.clear()
+            _ultimas_lecturas.update(lecturas)
             estado = state_manager.calcular_estado(lecturas)
 
             logger.info(
