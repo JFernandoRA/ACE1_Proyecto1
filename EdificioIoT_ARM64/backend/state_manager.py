@@ -57,15 +57,29 @@ def get_estado_actual() -> str:
     return _estado_actual
 
 
-def resetear_alerta():
+def resetear_alerta(lecturas: dict = None):
     """
     Se llama cuando el usuario presiona el botón físico de 'restablecer alerta'
     o el control equivalente del dashboard, una vez la condición peligrosa
     ya no está presente.
+
+    Importante: revisamos el valor de gas MÁS RECIENTE (lecturas), no la
+    etiqueta _estado_actual guardada. La etiqueta solo se actualiza cada
+    INTERVALO_LECTURA segundos dentro del loop de sensores, así que si el
+    gas ya bajó pero la etiqueta todavía dice "EMERGENCIA" porque no le ha
+    tocado su ciclo de actualización, el reset quedaría bloqueado sin razón.
     """
     global _estado_actual
-    if _estado_actual != "EMERGENCIA":
-        _estado_actual = "NORMAL"
-        logger.info("Alerta reseteada manualmente -> NORMAL")
-    else:
-        logger.warning("No se puede resetear: la condición de EMERGENCIA sigue activa")
+
+    if lecturas is not None:
+        gas = lecturas.get("gas")
+        if gas is not None and gas > config.THRESHOLDS["gas_max"]:
+            logger.warning(
+                "No se puede resetear: el gas sigue por encima del umbral (%s > %s)",
+                gas,
+                config.THRESHOLDS["gas_max"],
+            )
+            return
+
+    _estado_actual = "NORMAL"
+    logger.info("Alerta reseteada manualmente -> NORMAL")
