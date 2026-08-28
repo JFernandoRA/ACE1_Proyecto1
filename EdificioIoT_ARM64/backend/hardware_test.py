@@ -74,10 +74,17 @@ def aplicar_logica_automatica(lecturas, estado):
     actuators.set_ventilador(estado in ("ADVERTENCIA", "EMERGENCIA"))
 
     # --- Iluminación según luz ambiental (solo si modo AUTOMATICO) ---
+    # Con histéresis: se enciende por debajo de "luz_encender" y se apaga
+    # por encima de "luz_apagar". Entre esos dos valores, no se toca nada
+    # (se queda en el estado que ya tenía), para evitar parpadeos.
     if actuators.estado_actuadores["modo_iluminacion"] == "AUTOMATICO":
         luz = lecturas["luz"]
         if luz is not None:
-            actuators.set_luces(luz < config.THRESHOLDS["luz_baja"])
+            if luz < config.THRESHOLDS["luz_encender"]:
+                actuators.set_luces(True)
+            elif luz > config.THRESHOLDS["luz_apagar"]:
+                actuators.set_luces(False)
+            # si luz está entre los dos umbrales, no cambiamos nada
 
     # --- Puerta según distancia ---
     dist = lecturas["distancia"]

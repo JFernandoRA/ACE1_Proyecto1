@@ -52,7 +52,13 @@ THRESHOLDS = {
     "humedad_max": 70.0,           # %
     "gas_max": 400,                # unidades ADC (depende del sensor MQ)
     "distancia_apertura": 30.0,    # cm -> abre la puerta si es menor
-    "luz_baja": 200,               # unidades ADC -> enciende luces si es menor
+    # Histéresis para la iluminación: dos umbrales en vez de uno solo, para
+    # que las luces no parpadeen cuando el valor de luz anda justo en el
+    # límite. Se enciende por debajo de "luz_encender" y se apaga por
+    # encima de "luz_apagar" -- entre esos dos valores, se queda como
+    # estaba (no hace nada).
+    "luz_encender": 150,           # unidades ADC -> por debajo de esto, enciende
+    "luz_apagar": 250,             # unidades ADC -> por encima de esto, apaga
 }
 
 # Tiempo (segundos) que la puerta permanece abierta antes de cerrar sola
