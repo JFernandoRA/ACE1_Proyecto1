@@ -68,13 +68,10 @@ def actualizar_lcd(lecturas, estado_puerta, estado_global):
 def aplicar_logica_automatica(lecturas, estado):
     """Aplica las reglas obligatorias del proyecto sobre los actuadores."""
 
-    # --- Ventilación según temperatura ---
-    temp = lecturas["temperatura"]
-    if temp is not None:
-        if temp > config.THRESHOLDS["temperatura_alta"]:
-            actuators.set_ventilador(True)
-        else:
-            actuators.set_ventilador(False)
+    # --- Ventilación: se enciende si el estado global es ADVERTENCIA o
+    #     EMERGENCIA (sin importar qué sensor haya disparado ese estado),
+    #     y se apaga cuando el edificio vuelve a NORMAL.
+    actuators.set_ventilador(estado in ("ADVERTENCIA", "EMERGENCIA"))
 
     # --- Iluminación según luz ambiental (solo si modo AUTOMATICO) ---
     if actuators.estado_actuadores["modo_iluminacion"] == "AUTOMATICO":
