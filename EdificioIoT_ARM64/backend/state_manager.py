@@ -11,6 +11,7 @@ siguiendo las reglas obligatorias del proyecto:
 
 import logging
 import config
+import actuators
 
 logger = logging.getLogger("state_manager")
 
@@ -83,3 +84,13 @@ def resetear_alerta(lecturas: dict = None):
 
     _estado_actual = "NORMAL"
     logger.info("Alerta reseteada manualmente -> NORMAL")
+
+    # Retroalimentación visual inmediata: prende el LED verde al instante,
+    # en vez de esperar hasta el siguiente ciclo del loop principal (que
+    # puede tardar varios segundos y, si la condición real sigue presente,
+    # nunca llega a mostrarlo porque el estado ya volvió a cambiar antes).
+    # OJO: si el sensor sigue detectando la condición peligrosa, el próximo
+    # ciclo de lectura va a recalcular el estado real y puede volver a
+    # ADVERTENCIA/EMERGENCIA -- esto es solo para confirmar que el LED en
+    # sí funciona, no reemplaza que la condición real deba resolverse.
+    actuators.set_leds_estado("NORMAL")
