@@ -120,3 +120,18 @@ def get_latest_arm64_results(limit: int = 20):
 def get_current_status():
     col = get_db()[config.COLLECTIONS["system_status"]]
     return col.find_one(sort=[("timestamp", -1)])
+
+def get_latest_actuator_state(actuator_name: str):
+    """
+    Busca el evento más reciente de tipo 'cambio_actuador' para un actuador
+    específico ('puerta', 'luces', 'ventilador', 'alarma'). Este evento lo
+    genera mqtt_mongo_bridge.py cada vez que llega un mensaje MQTT de
+    edificio/actuadores/<algo>.
+    """
+    col = get_db()[config.COLLECTIONS["events"]]
+    return col.find_one(
+        {"type": "cambio_actuador", "data.actuador": actuator_name},
+        sort=[("timestamp", -1)],
+    )
+
+
