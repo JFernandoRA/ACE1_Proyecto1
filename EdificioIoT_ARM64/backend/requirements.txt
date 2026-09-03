@@ -1,6 +1,8 @@
 paho-mqtt==1.6.1
 pymongo==4.7.2
 python-dotenv==1.0.1
+flask==3.0.3
+flask-cors==4.0.1
 
 # --- Solo necesarias en la Raspberry Pi (USE_SIMULATION=False) ---
 RPi.GPIO==0.7.1

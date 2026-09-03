@@ -33,6 +33,14 @@ TOPICS = {
     "arm64_resultados": "edificio/arm64/resultados",
 }
 
+#API REST (usada por api.py para servir historial de MongoDB al dashboard)
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+API_PORT = int(os.getenv("API_PORT", "5000"))
+
 #MongoDB Atlas
 MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "edificio_inteligente")
