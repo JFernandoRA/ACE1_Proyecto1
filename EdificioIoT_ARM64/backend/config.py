@@ -71,7 +71,7 @@ INTERVALO_LECTURA = 3
 LECTURAS_PARA_ARM64 = 20
 
 #Rutas del modulo ARM64
-ARM64_DIR = os.getenv("ARM64_DIR", "../arm64")
+ARM64_DIR = os.getenv("ARM64_DIR", "../ARM")
 ARM64_BIN = os.path.join(ARM64_DIR, "procesador")
 ARM64_DATOS_TXT = os.path.join(ARM64_DIR, "datos.txt")
 ARM64_RESULTADO_TXT = os.path.join(ARM64_DIR, "resultado.txt")
