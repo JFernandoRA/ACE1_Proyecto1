@@ -33,6 +33,14 @@ TOPICS = {
     "arm64_resultados": "edificio/arm64/resultados",
 }
 
+#API REST (usada por api.py para servir historial de MongoDB al dashboard)
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+API_PORT = int(os.getenv("API_PORT", "5000"))
+
 #MongoDB Atlas
 MONGO_URI = os.getenv("MONGO_URI", "")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "edificio_inteligente")
@@ -71,7 +79,7 @@ INTERVALO_LECTURA = 3
 LECTURAS_PARA_ARM64 = 20
 
 #Rutas del modulo ARM64
-ARM64_DIR = os.getenv("ARM64_DIR", "../arm64")
+ARM64_DIR = os.getenv("ARM64_DIR", "../ARM")
 ARM64_BIN = os.path.join(ARM64_DIR, "procesador")
 ARM64_DATOS_TXT = os.path.join(ARM64_DIR, "datos.txt")
 ARM64_RESULTADO_TXT = os.path.join(ARM64_DIR, "resultado.txt")
