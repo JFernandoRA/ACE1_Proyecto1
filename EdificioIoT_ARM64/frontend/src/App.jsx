@@ -22,7 +22,7 @@ import './App.css'
 
 const sensorDefinitions = [
   {
-    key: 'temperatura',
+    id: 'temperatura',
     label: 'Temperatura',
     unit: '°C',
     icon: Thermometer,
@@ -30,7 +30,7 @@ const sensorDefinitions = [
     helper: 'Umbral alto: 30 °C',
   },
   {
-    key: 'humedad',
+    id: 'humedad',
     label: 'Humedad',
     unit: '%',
     icon: Droplets,
@@ -38,7 +38,7 @@ const sensorDefinitions = [
     helper: 'Rango seguro: 30–70 %',
   },
   {
-    key: 'gas',
+    id: 'gas',
     label: 'Gas / humo',
     unit: 'ADC',
     icon: Gauge,
@@ -46,7 +46,7 @@ const sensorDefinitions = [
     helper: 'Emergencia: mayor a 400',
   },
   {
-    key: 'distancia',
+    id: 'distancia',
     label: 'Distancia',
     unit: 'cm',
     icon: Ruler,
@@ -54,7 +54,7 @@ const sensorDefinitions = [
     helper: 'Apertura: menor a 30 cm',
   },
   {
-    key: 'luz',
+    id: 'luz',
     label: 'Nivel de luz',
     unit: 'ADC',
     icon: Sun,
@@ -62,6 +62,8 @@ const sensorDefinitions = [
     helper: 'Luz baja: menor a 200',
   },
 ]
+
+
 
 function App() {
   const {
@@ -76,7 +78,7 @@ function App() {
   const [selectedSensor, setSelectedSensor] = useState('temperatura')
 
   const selectedDefinition = useMemo(
-    () => sensorDefinitions.find((sensor) => sensor.key === selectedSensor),
+    () => sensorDefinitions.find((sensor) => sensor.id === selectedSensor),
     [selectedSensor],
   )
 
@@ -110,11 +112,11 @@ function App() {
           <div className="sensor-grid">
             {sensorDefinitions.map((sensor) => (
               <SensorCard
-                key={sensor.key}
+                key={sensor.id}
                 {...sensor}
-                value={building.sensors[sensor.key]}
-                active={selectedSensor === sensor.key}
-                onSelect={() => setSelectedSensor(sensor.key)}
+                value={building.sensors[sensor.id]}
+                active={selectedSensor === sensor.id}
+                onSelect={() => setSelectedSensor(sensor.id)}
               />
             ))}
           </div>

@@ -117,61 +117,89 @@ export function useBuildingData() {
   }, [])
 
   useEffect(() => {
-    if (!useMockData) {
-      let active = true
+  if (!useMockData) {
+    let cancelled = false
+    let controller = null
+
+
+    // Retrasamos la creación real del cliente MQTT un tick. En desarrollo,
+    // React StrictMode monta este efecto, lo desmonta y lo vuelve a montar
+    // de inmediato para detectar efectos mal limpiados. Ese "montaje
+    // fantasma" cancela su propio timer antes de que llegue a disparar,
+    // así que solo el montaje real crea la conexión WebSocket -- evitando
+    // el doble cliente MQTT que veíamos en consola.
+    const timer = window.setTimeout(() => {
       createBuildingMqtt({
         onMessage: handleMqttMessage,
         onStatus: setConnection,
-      }).then((controller) => {
-        if (active) mqttController.current = controller
-        else controller?.disconnect()
+      }).then((created) => {
+        if (cancelled) {
+          created?.disconnect()
+          return
+        }
+        controller = created
+        mqttController.current = created
       }).catch((error) => {
         console.error('No se pudo iniciar el cliente MQTT', error)
-        if (active) setConnection('error')
+        if (!cancelled) setConnection('error')
       })
-      return () => {
-        active = false
-        mqttController.current?.disconnect()
-      }
+    }, 0)
+
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      controller?.disconnect()
+      mqttController.current = null
     }
+  }
 
-    const interval = window.setInterval(() => {
-      setBuilding((current) => {
-        const sensors = {
-          temperatura: walk(current.sensors.temperatura, 1.1, 20, 34, 1),
-          humedad: walk(current.sensors.humedad, 3, 28, 74, 1),
-          gas: Math.random() < 0.025 ? Math.round(420 + Math.random() * 90) : walk(current.sensors.gas, 28, 70, 260),
-          distancia: walk(current.sensors.distancia, 20, 18, 180, 1),
-          luz: walk(current.sensors.luz, 65, 60, 900),
-        }
-        const status = calculateStatus(sensors)
-        const actuators = { ...current.actuators }
 
-        if (actuators.modo_iluminacion === 'AUTOMATICO') actuators.luces = sensors.luz < 200
-        actuators.ventilador = sensors.temperatura > 30
-        actuators.alarma = status === 'EMERGENCIA'
-        if (status === 'EMERGENCIA') actuators.puerta = 'ABIERTA'
+  const interval = window.setInterval(() => {
+    setBuilding((current) => {
+      const sensors = {
+        temperatura: walk(current.sensors.temperatura, 1.1, 20, 34, 1),
+        humedad: walk(current.sensors.humedad, 3, 28, 74, 1),
+        gas: Math.random() < 0.025 ? Math.round(420 + Math.random() * 90) : walk(current.sensors.gas, 28, 70, 260),
+        distancia: walk(current.sensors.distancia, 20, 18, 180, 1),
+        luz: walk(current.sensors.luz, 65, 60, 900),
+      }
+      const status = calculateStatus(sensors)
+      const actuators = { ...current.actuators }
 
-        Object.entries(sensors).forEach(([sensor, value]) => {
-          setHistory((currentHistory) => appendHistory(currentHistory, sensor, value))
-        })
 
-        if (status !== current.status) {
-          setEvents((currentEvents) => [{
-            id: crypto.randomUUID(),
-            type: 'cambio_estado',
-            description: `Estado global actualizado a ${status}`,
-            timestamp: new Date().toISOString(),
-          }, ...currentEvents].slice(0, 20))
-        }
+      if (actuators.modo_iluminacion === 'AUTOMATICO') actuators.luces = sensors.luz < 200
+      actuators.ventilador = sensors.temperatura > 30
+      actuators.alarma = status === 'EMERGENCIA'
+      if (status === 'EMERGENCIA') actuators.puerta = 'ABIERTA'
 
-        return { ...current, sensors, status, actuators }
+
+      Object.entries(sensors).forEach(([sensor, value]) => {
+        setHistory((currentHistory) => appendHistory(currentHistory, sensor, value))
       })
-      setLastUpdate(new Date())
-    }, 3000)
 
-    return () => window.clearInterval(interval)
-  }, [handleMqttMessage])
+
+      if (status !== current.status) {
+        setEvents((currentEvents) => [{
+          id: crypto.randomUUID(),
+          type: 'cambio_estado',
+          description: `Estado global actualizado a ${status}`,
+          timestamp: new Date().toISOString(),
+        }, ...currentEvents].slice(0, 20))
+      }
+
+
+      return { ...current, sensors, status, actuators }
+    })
+    setLastUpdate(new Date())
+  }, 3000)
+
+
+  return () => window.clearInterval(interval)
+}, [handleMqttMessage])
+
+
+
 
   const sendCommand = useCallback((action, value) => {
     const payload = { action }

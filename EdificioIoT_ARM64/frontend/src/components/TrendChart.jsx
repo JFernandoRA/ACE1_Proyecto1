@@ -82,12 +82,12 @@ function TrendChart({ history, sensor, definition, sensors, onSensorChange }) {
         <div className="chart-tabs" role="tablist" aria-label="Seleccionar sensor">
           {sensors.map((item) => (
             <button
-              className={`chart-tab ${sensor === item.key ? 'active' : ''}`}
+              className={`chart-tab ${sensor === item.id ? 'active' : ''}`}
               type="button"
               role="tab"
-              aria-selected={sensor === item.key}
-              onClick={() => onSensorChange(item.key)}
-              key={item.key}
+              aria-selected={sensor === item.id}
+              onClick={() => onSensorChange(item.id)}
+              key={item.id}
             >
               {item.label}
             </button>
