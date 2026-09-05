@@ -5,7 +5,14 @@ Lee variables de entorno desde un archivo .env
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Cargamos el .env por RUTA ABSOLUTA (basada en dónde vive este mismo
+# archivo config.py), no por el directorio de trabajo actual. Si no
+# hiciéramos esto, correr "python3 backend/main.py" desde la raíz del
+# proyecto (en vez de entrar a backend/ primero) haría que load_dotenv()
+# no encontrara el .env, y TODO regresaría silenciosamente a sus valores
+# por default -- incluyendo USE_SIMULATION, que por default es True.
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+load_dotenv(dotenv_path=_ENV_PATH)
 
 #Modo de operación
 USE_SIMULATION = os.getenv("USE_SIMULATION", "True").lower() == "true"
