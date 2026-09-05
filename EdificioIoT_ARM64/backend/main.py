@@ -4,7 +4,8 @@ Loop principal del sistema de Edificio Inteligente IoT.
 Flujo por cada ciclo de lectura:
   1. Leer sensores (real o simulado).
   2. Publicar lecturas por MQTT.
-  3. Guardar lecturas en MongoDB.
+  3. Guardar lecturas en MongoDB. (ahora lo hace mqtt_mongo_bridge.py,
+     escuchando estos mismos topics -- ver líneas comentadas con db.save_*)
   4. Calcular estado global y actuar en consecuencia (LEDs, buzzer, puerta, etc.).
   5. Actualizar el LCD rotativo del panel físico.
   6. Cada N lecturas, disparar el flujo con el módulo ARM64.
@@ -34,6 +35,9 @@ logger = logging.getLogger("main")
 # Buffer de temperaturas reales para alimentar al módulo ARM64
 _buffer_temperaturas: list[float] = []
 _puerta_abierta_desde: float | None = None
+# Última lectura de sensores completa, para que resetear_alerta() pueda
+# validar el gas actual (igual que hace hardware_test.py con gpiozero).
+_ultimas_lecturas: dict = {}
 
 # Última lectura de sensores conocida, para que el botón físico de "reset"
 # (que llega por interrupción, fuera del loop principal) pueda consultar el
@@ -48,7 +52,9 @@ _NUM_PANTALLAS = 6
 def manejar_comando_remoto(payload: dict):
     action = payload.get("action")
     logger.info("Comando remoto recibido: %s", payload)
-    db.save_command("dashboard", action, payload)
+    # Guardado en Mongo movido a mqtt_mongo_bridge.py, que escucha
+    # edificio/control/remoto y guarda el comando desde ahí.
+    # db.save_command("dashboard", action, payload)
 
     global _puerta_abierta_desde
     if action == "abrir_puerta":
@@ -152,7 +158,9 @@ def procesar_ciclo_sensores():
         if valor is None:
             continue
         mqtt_client.publish(sensor_key, {"value": valor})
-        db.save_sensor_reading(sensor_key, valor)
+        # Guardado en Mongo movido a mqtt_mongo_bridge.py (escucha este
+        # mismo topic).
+        # db.save_sensor_reading(sensor_key, valor)
 
     if lecturas.get("temperatura") is not None:
         _buffer_temperaturas.append(lecturas["temperatura"])
@@ -166,7 +174,9 @@ def procesar_ciclo_sensores():
     if estado_nuevo != estado_anterior:
         logger.info("Cambio de estado: %s -> %s", estado_anterior, estado_nuevo)
         db.save_event("cambio_estado", f"{estado_anterior} -> {estado_nuevo}", lecturas)
-        db.save_system_status(estado_nuevo, reason="cambio automático por sensores")
+        # Guardado en Mongo movido a mqtt_mongo_bridge.py (escucha
+        # edificio/estado/global, que se publica en cada ciclo).
+        # db.save_system_status(estado_nuevo, reason="cambio automático por sensores")
 
     mqtt_client.publish("estado_global", {"estado": estado_nuevo})
 
@@ -175,6 +185,8 @@ def procesar_ciclo_sensores():
         actuators.activar_alarma()
         actuators.abrir_puerta()  # simula evacuación
         _puerta_abierta_desde = time.time()
+        # Este también se queda: guarda el motivo exacto de la emergencia
+        # con las lecturas completas, que no viaja por MQTT.
         db.save_event("emergencia", "Nivel de gas/humo por encima del umbral", lecturas)
     elif estado_nuevo == "ADVERTENCIA":
         if lecturas.get("temperatura", 0) > config.THRESHOLDS["temperatura_alta"]:
@@ -223,12 +235,9 @@ def procesar_con_arm64():
     logger.info("Disparando módulo ARM64 con %d lecturas", len(_buffer_temperaturas))
     resultado = arm64_bridge.procesar_lecturas(_buffer_temperaturas)
     if resultado:
-        db.save_arm64_result(
-            max_v=resultado["max"],
-            min_v=resultado["min"],
-            avg_v=resultado["avg"],
-            count=resultado["count"],
-        )
+        # Guardado en Mongo movido a mqtt_mongo_bridge.py (escucha
+        # edificio/arm64/resultados). 
+        # db.save_arm64_result(**resultado)
         mqtt_client.publish("arm64_resultados", resultado)
         logger.info("Resultado ARM64: %s", resultado)
     else:

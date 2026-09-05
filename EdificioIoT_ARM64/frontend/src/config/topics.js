@@ -13,19 +13,28 @@ export const TOPICS = Object.freeze({
   arm64_resultados: 'edificio/arm64/resultados',
 })
 
+// export const SUBSCRIPTION_TOPICS = [
+//   TOPICS.temperatura,
+//   TOPICS.humedad,
+//   TOPICS.gas,
+//   TOPICS.distancia,
+//   TOPICS.luz,
+//   TOPICS.puerta,
+//   TOPICS.luces,
+//   TOPICS.ventilador,
+//   TOPICS.alarma,
+//   TOPICS.estado_global,
+//   TOPICS.arm64_resultados,
+// ]
 export const SUBSCRIPTION_TOPICS = [
-  TOPICS.temperatura,
-  TOPICS.humedad,
-  TOPICS.gas,
-  TOPICS.distancia,
-  TOPICS.luz,
-  TOPICS.puerta,
-  TOPICS.luces,
-  TOPICS.ventilador,
-  TOPICS.alarma,
+  'edificio/sensores/#',
+  'edificio/actuadores/#',
   TOPICS.estado_global,
   TOPICS.arm64_resultados,
 ]
+
+
+
 
 export const SENSOR_BY_TOPIC = Object.freeze({
   [TOPICS.temperatura]: 'temperatura',

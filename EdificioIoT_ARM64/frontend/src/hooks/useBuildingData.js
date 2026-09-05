@@ -1,251 +1,235 @@
-import { useEffect, useRef, useState } from 'react'
-import mqtt from 'mqtt'
-import { TOPICS, SUBSCRIPTION_TOPICS, SENSOR_BY_TOPIC } from '../topics.js'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { SENSOR_BY_TOPIC, TOPICS } from '../config/topics.js'
+import {
+  createInitialBuilding,
+  createInitialHistory,
+  initialCommands,
+  initialEvents,
+  timeLabel,
+} from '../data/mockData.js'
+import { createBuildingMqtt } from '../services/mqttClient.js'
 
-const USE_MOCK = String(import.meta.env.VITE_USE_MOCK_DATA).toLowerCase() === 'true'
-const MQTT_URL = import.meta.env.VITE_MQTT_URL
-const MQTT_USERNAME = import.meta.env.VITE_MQTT_USERNAME
-const MQTT_PASSWORD = import.meta.env.VITE_MQTT_PASSWORD
-const MQTT_CLIENT_PREFIX = import.meta.env.VITE_MQTT_CLIENT_PREFIX ?? 'edificio_dashboard'
-const API_URL = import.meta.env.VITE_API_URL
+const useMockData = (import.meta.env.VITE_USE_MOCK_DATA ?? 'true').toLowerCase() === 'true'
 
-const SENSOR_KEYS = ['temperatura', 'humedad', 'gas', 'distancia', 'luz']
-const MAX_HISTORY_POINTS = 60
-
-const emptyHistory = () =>
-  SENSOR_KEYS.reduce((acc, key) => {
-    acc[key] = []
-    return acc
-  }, {})
-
-const initialBuilding = {
-  sensors: { temperatura: null, humedad: null, gas: null, distancia: null, luz: null },
-  actuators: {
-    puerta: 'CERRADA',
-    luces: false,
-    modo_iluminacion: 'AUTOMATICO',
-    ventilador: false,
-    alarma: false,
-  },
-  status: 'NORMAL',
-  arm64: { max: null, min: null, avg: null, count: null },
+const commandLabels = {
+  abrir_puerta: 'Abrir puerta principal',
+  cerrar_puerta: 'Cerrar puerta principal',
+  toggle_luces: 'Cambiar estado de iluminación',
+  set_modo_iluminacion: 'Cambiar modo de iluminación',
+  toggle_ventilador: 'Cambiar estado de ventilación',
+  silenciar_alarma: 'Silenciar alarma',
+  resetear_alerta: 'Restablecer estado de alerta',
 }
 
-function formatLabel(date) {
-  return new Intl.DateTimeFormat('es-GT', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(date)
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
 }
 
-function pushHistoryPoint(history, sensorKey, value) {
-  const next = { ...history }
-  const points = [...(next[sensorKey] ?? [])]
-  points.push({ label: formatLabel(new Date()), value })
-  if (points.length > MAX_HISTORY_POINTS) points.shift()
-  next[sensorKey] = points
-  return next
+function walk(value, variation, min, max, decimals = 0) {
+  const next = clamp(value + (Math.random() - 0.5) * variation, min, max)
+  return Number(next.toFixed(decimals))
 }
 
-async function fetchJSON(url) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`)
-  return res.json()
+function appendHistory(history, sensor, value) {
+  const nextPoint = { label: timeLabel(new Date()), value }
+  return {
+    ...history,
+    [sensor]: [...(history[sensor] ?? []), nextPoint].slice(-20),
+  }
+}
+
+function calculateStatus(sensors) {
+  if (sensors.gas > 400) return 'EMERGENCIA'
+  if (sensors.temperatura > 30 || sensors.humedad < 30 || sensors.humedad > 70) {
+    return 'ADVERTENCIA'
+  }
+  return 'NORMAL'
+}
+
+function applyMockCommand(building, action, value) {
+  const actuators = { ...building.actuators }
+  let status = building.status
+
+  if (action === 'abrir_puerta') actuators.puerta = 'ABIERTA'
+  if (action === 'cerrar_puerta') actuators.puerta = 'CERRADA'
+  if (action === 'toggle_luces') actuators.luces = Boolean(value)
+  if (action === 'set_modo_iluminacion') actuators.modo_iluminacion = value
+  if (action === 'toggle_ventilador') actuators.ventilador = Boolean(value)
+  if (action === 'silenciar_alarma') actuators.alarma = false
+  if (action === 'resetear_alerta' && building.sensors.gas <= 400) status = 'NORMAL'
+
+  return { ...building, status, actuators }
 }
 
 export function useBuildingData() {
-  const [building, setBuilding] = useState(initialBuilding)
-  const [history, setHistory] = useState(emptyHistory)
-  const [events, setEvents] = useState([])
-  const [commands, setCommands] = useState([])
-  const [connection, setConnection] = useState(USE_MOCK ? 'simulated' : 'connecting')
+  const [building, setBuilding] = useState(createInitialBuilding)
+  const [history, setHistory] = useState(createInitialHistory)
+  const [events, setEvents] = useState(initialEvents)
+  const [commands, setCommands] = useState(initialCommands)
+  const [connection, setConnection] = useState(useMockData ? 'simulated' : 'connecting')
   const [lastUpdate, setLastUpdate] = useState(new Date())
-  const clientRef = useRef(null)
+  const mqttController = useRef(null)
 
-  // --- Carga inicial de historial / eventos / comandos desde la API REST ---
-  // (la API lee MongoDB Atlas; ver backend/api.py). Si la API todavía no
-  // está corriendo, el dashboard sigue funcionando solo con datos en vivo.
+  const handleMqttMessage = useCallback((topic, payload) => {
+    const sensor = SENSOR_BY_TOPIC[topic]
+    const receivedAt = new Date()
+
+    if (sensor && typeof payload.value === 'number') {
+      setBuilding((current) => ({
+        ...current,
+        sensors: { ...current.sensors, [sensor]: payload.value },
+      }))
+      setHistory((current) => appendHistory(current, sensor, payload.value))
+    } else if (topic === TOPICS.estado_global) {
+      setBuilding((current) => ({ ...current, status: payload.estado ?? current.status }))
+    } else if (topic === TOPICS.puerta) {
+      setBuilding((current) => ({
+        ...current,
+        actuators: { ...current.actuators, puerta: payload.estado ?? current.actuators.puerta },
+      }))
+    } else if (topic === TOPICS.luces) {
+      setBuilding((current) => ({
+        ...current,
+        actuators: {
+          ...current.actuators,
+          luces: payload.encendidas ?? current.actuators.luces,
+          modo_iluminacion: payload.modo ?? current.actuators.modo_iluminacion,
+        },
+      }))
+    } else if (topic === TOPICS.ventilador) {
+      setBuilding((current) => ({
+        ...current,
+        actuators: {
+          ...current.actuators,
+          ventilador: payload.encendido ?? current.actuators.ventilador,
+        },
+      }))
+    } else if (topic === TOPICS.alarma) {
+      setBuilding((current) => ({
+        ...current,
+        actuators: { ...current.actuators, alarma: payload.activa ?? current.actuators.alarma },
+      }))
+    } else if (topic === TOPICS.arm64_resultados) {
+      setBuilding((current) => ({ ...current, arm64: { ...current.arm64, ...payload } }))
+    }
+
+    setLastUpdate(receivedAt)
+  }, [])
+
   useEffect(() => {
-    if (!API_URL) return
+  if (!useMockData) {
     let cancelled = false
+    let controller = null
 
-    ;(async () => {
-      try {
-        const [eventsData, commandsData, arm64Data] = await Promise.all([
-          fetchJSON(`${API_URL}/events?limit=20`),
-          fetchJSON(`${API_URL}/commands?limit=20`),
-          fetchJSON(`${API_URL}/arm64/latest`),
-        ])
-        if (cancelled) return
-        setEvents(eventsData)
-        setCommands(commandsData)
-        if (arm64Data) {
-          setBuilding((prev) => ({ ...prev, arm64: arm64Data }))
+
+    // Retrasamos la creación real del cliente MQTT un tick. En desarrollo,
+    // React StrictMode monta este efecto, lo desmonta y lo vuelve a montar
+    // de inmediato para detectar efectos mal limpiados. Ese "montaje
+    // fantasma" cancela su propio timer antes de que llegue a disparar,
+    // así que solo el montaje real crea la conexión WebSocket -- evitando
+    // el doble cliente MQTT que veíamos en consola.
+    const timer = window.setTimeout(() => {
+      createBuildingMqtt({
+        onMessage: handleMqttMessage,
+        onStatus: setConnection,
+      }).then((created) => {
+        if (cancelled) {
+          created?.disconnect()
+          return
         }
+        controller = created
+        mqttController.current = created
+      }).catch((error) => {
+        console.error('No se pudo iniciar el cliente MQTT', error)
+        if (!cancelled) setConnection('error')
+      })
+    }, 0)
 
-        const historyEntries = await Promise.all(
-          SENSOR_KEYS.map((key) =>
-            fetchJSON(`${API_URL}/readings/${key}?limit=${MAX_HISTORY_POINTS}`).catch(() => []),
-          ),
-        )
-        if (cancelled) return
-        setHistory((prev) => {
-          const next = { ...prev }
-          SENSOR_KEYS.forEach((key, i) => {
-            next[key] = historyEntries[i].map((point) => ({
-              label: formatLabel(new Date(point.timestamp)),
-              value: point.value,
-            }))
-          })
-          return next
-        })
-      } catch (err) {
-        // No es crítico: el dashboard sigue funcionando solo con MQTT en vivo.
-        console.warn('No se pudo cargar el historial desde la API:', err)
-      }
-    })()
 
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
+      controller?.disconnect()
+      mqttController.current = null
     }
-  }, [])
-
-  // --- Conexión MQTT en vivo ---
-  useEffect(() => {
-    if (USE_MOCK) {
-      // Modo simulación de UI, sin Raspberry Pi/MQTT/Mongo conectados.
-      const interval = setInterval(() => {
-        setBuilding((prev) => ({
-          ...prev,
-          sensors: {
-            temperatura: +(20 + Math.random() * 15).toFixed(1),
-            humedad: +(25 + Math.random() * 50).toFixed(1),
-            gas: Math.round(50 + Math.random() * 200),
-            distancia: +(5 + Math.random() * 195).toFixed(1),
-            luz: Math.round(Math.random() * 1023),
-          },
-        }))
-        setLastUpdate(new Date())
-      }, 3000)
-      return () => clearInterval(interval)
-    }
-
-    if (!MQTT_URL) {
-      setConnection('error')
-      return
-    }
-
-    const client = mqtt.connect(MQTT_URL, {
-      username: MQTT_USERNAME,
-      password: MQTT_PASSWORD,
-      clientId: `${MQTT_CLIENT_PREFIX}_${Math.random().toString(16).slice(2, 10)}`,
-      reconnectPeriod: 3000,
-      connectTimeout: 10000,
-    })
-    clientRef.current = client
-
-    client.on('connect', () => {
-      setConnection('connected')
-      client.subscribe(SUBSCRIPTION_TOPICS, (err) => {
-        if (err) console.error('Error suscribiendo a topics MQTT:', err)
-      })
-    })
-
-    client.on('reconnect', () => setConnection('connecting'))
-    client.on('close', () => setConnection('connecting'))
-    client.on('error', (err) => {
-      console.error('Error MQTT:', err)
-      setConnection('error')
-    })
-
-    client.on('message', (topic, payloadBuf) => {
-      let payload
-      try {
-        payload = JSON.parse(payloadBuf.toString())
-      } catch {
-        return
-      }
-
-      setLastUpdate(new Date())
-
-      const sensorKey = SENSOR_BY_TOPIC[topic]
-      if (sensorKey) {
-        setBuilding((prev) => ({
-          ...prev,
-          sensors: { ...prev.sensors, [sensorKey]: payload.value },
-        }))
-        setHistory((prev) => pushHistoryPoint(prev, sensorKey, payload.value))
-        return
-      }
-
-      switch (topic) {
-        case TOPICS.puerta:
-          setBuilding((prev) => ({
-            ...prev,
-            actuators: { ...prev.actuators, puerta: payload.estado },
-          }))
-          break
-        case TOPICS.luces:
-          setBuilding((prev) => ({
-            ...prev,
-            actuators: {
-              ...prev.actuators,
-              luces: payload.encendidas,
-              modo_iluminacion: payload.modo ?? prev.actuators.modo_iluminacion,
-            },
-          }))
-          break
-        case TOPICS.ventilador:
-          setBuilding((prev) => ({
-            ...prev,
-            actuators: { ...prev.actuators, ventilador: payload.encendido },
-          }))
-          break
-        case TOPICS.alarma:
-          setBuilding((prev) => ({
-            ...prev,
-            actuators: { ...prev.actuators, alarma: payload.activa },
-          }))
-          break
-        case TOPICS.estado_global:
-          setBuilding((prev) => ({ ...prev, status: payload.estado }))
-          break
-        case TOPICS.arm64_resultados:
-          setBuilding((prev) => ({
-            ...prev,
-            arm64: {
-              max: payload.max,
-              min: payload.min,
-              avg: payload.avg,
-              count: payload.count,
-            },
-          }))
-          break
-        default:
-          break
-      }
-    })
-
-    return () => {
-      client.end(true)
-      clientRef.current = null
-    }
-  }, [])
-
-  const sendCommand = (action, value) => {
-    const payload = { action, ...(value !== undefined ? { value } : {}) }
-
-    // Optimista: refleja el comando en el historial local de inmediato,
-    // aunque la copia "oficial" (con fecha del servidor) llegará luego vía API/Mongo.
-    setCommands((prev) => [
-      { id: `local-${Date.now()}`, label: action, source: 'dashboard', timestamp: new Date() },
-      ...prev,
-    ])
-
-    if (USE_MOCK) return
-    clientRef.current?.publish(TOPICS.control_remoto, JSON.stringify(payload))
   }
 
-  return { building, history, events, commands, connection, lastUpdate, sendCommand }
+
+  const interval = window.setInterval(() => {
+    setBuilding((current) => {
+      const sensors = {
+        temperatura: walk(current.sensors.temperatura, 1.1, 20, 34, 1),
+        humedad: walk(current.sensors.humedad, 3, 28, 74, 1),
+        gas: Math.random() < 0.025 ? Math.round(420 + Math.random() * 90) : walk(current.sensors.gas, 28, 70, 260),
+        distancia: walk(current.sensors.distancia, 20, 18, 180, 1),
+        luz: walk(current.sensors.luz, 65, 60, 900),
+      }
+      const status = calculateStatus(sensors)
+      const actuators = { ...current.actuators }
+
+
+      if (actuators.modo_iluminacion === 'AUTOMATICO') actuators.luces = sensors.luz < 200
+      actuators.ventilador = sensors.temperatura > 30
+      actuators.alarma = status === 'EMERGENCIA'
+      if (status === 'EMERGENCIA') actuators.puerta = 'ABIERTA'
+
+
+      Object.entries(sensors).forEach(([sensor, value]) => {
+        setHistory((currentHistory) => appendHistory(currentHistory, sensor, value))
+      })
+
+
+      if (status !== current.status) {
+        setEvents((currentEvents) => [{
+          id: crypto.randomUUID(),
+          type: 'cambio_estado',
+          description: `Estado global actualizado a ${status}`,
+          timestamp: new Date().toISOString(),
+        }, ...currentEvents].slice(0, 20))
+      }
+
+
+      return { ...current, sensors, status, actuators }
+    })
+    setLastUpdate(new Date())
+  }, 3000)
+
+
+  return () => window.clearInterval(interval)
+}, [handleMqttMessage])
+
+
+
+
+  const sendCommand = useCallback((action, value) => {
+    const payload = { action }
+    if (value !== undefined) payload.value = value
+
+    if (useMockData) {
+      setBuilding((current) => applyMockCommand(current, action, value))
+    } else {
+      mqttController.current?.publishCommand(payload)
+    }
+
+    setCommands((current) => [{
+      id: crypto.randomUUID(),
+      source: 'dashboard',
+      action,
+      label: value === undefined
+        ? commandLabels[action] ?? action
+        : `${commandLabels[action] ?? action}: ${String(value)}`,
+      timestamp: new Date().toISOString(),
+    }, ...current].slice(0, 20))
+    setLastUpdate(new Date())
+  }, [])
+
+  return {
+    building,
+    history,
+    events,
+    commands,
+    connection,
+    lastUpdate,
+    sendCommand,
+  }
 }
